@@ -1,10 +1,10 @@
-@if(searchService.isSearching()) {
+@if(loading) {
 <div class="searching">
   <ion-spinner name="crescent"></ion-spinner>
 </div>
 }
 
-@if(searchService.displayTotal() === 0 && !searchService.isSearching()) {
+@if(searchService.displayTotal() === 0 && !loading) {
 <div class="no-results ion-text-center print-hide">
   <h2>{{ 'Pages.SearchResults.NoResults.Header' | translate }}</h2>
   <p>{{ 'Pages.SearchResults.NoResults.Subheader' | translate }} <a target="_blank" [routerLink]="['/syntax']">{{
@@ -12,7 +12,7 @@
 </div>
 }
 
-@if(searchService.displayTotal() > 0 && !searchService.isSearching()) {
+@if(searchService.displayTotal() > 0 && !loading) {
 <ng-container>
   <ng-container *ngTemplateOutlet="cardSwitches"></ng-container>
 
@@ -29,23 +29,22 @@
     <ion-grid class="cards">
       <ion-row>
         @for(card of searchService.visibleCards(); track card.id) {
-
-        @if(searchService.queryDisplayValue === 'images') {
+        @if(searchService.displayValue === 'images') {
         <ion-col [sizeMd]="3" [sizeSm]="6" [sizeXs]="12">
           <div class="card-container">
-            <a [routerLink]="['/card', card.id]" [queryParams]="{ q: queryString }">
+            <a [routerLink]="['/card', card.id]">
               <app-card-display class="card print-hide" [cardCode]="card.id"
-                [display]="searchService.queryDisplayValue"></app-card-display>
+                [display]="searchService.displayValue"></app-card-display>
             </a>
           </div>
         </ion-col>
         }
 
-        @if(searchService.queryDisplayValue === 'text') {
+        @if(searchService.displayValue === 'text') {
         <ion-col [sizeXs]="12">
           <div class="card-container text">
             <app-card-display class="card text" [cardCode]="card.id"
-              [display]="searchService.queryDisplayValue"></app-card-display>
+              [display]="searchService.displayValue"></app-card-display>
           </div>
         </ion-col>
         }
@@ -66,8 +65,8 @@
     <ion-row>
       <ion-col [sizeXs]="12" [sizeMd]="6" [sizeLg]="2">
         <div class="text-display">{{ 'Pages.SearchResults.Results.Sorter.As' | translate }}</div>
-        <ion-select class="themed" [(ngModel)]="searchService.queryDisplayValue" interface="popover"
-          placeholder="Card Display" (ionChange)="setDisplay($event.target.value)">
+        <ion-select class="themed" [value]="searchService.displayValue" interface="popover" placeholder="Card Display"
+          (ionChange)="setDisplay($event.target.value)">
           <ion-select-option value="images">{{ 'Pages.SearchResults.Results.Sorter.AsImages' | translate
             }}</ion-select-option>
           <ion-select-option value="text">{{ 'Pages.SearchResults.Results.Sorter.AsText' | translate
@@ -77,8 +76,8 @@
 
       <ion-col [sizeXs]="12" [sizeMd]="6" [sizeLg]="4">
         <div class="text-display">{{ 'Pages.SearchResults.Results.Sorter.Sorted' | translate }}</div>
-        <ion-select class="themed" [(ngModel)]="searchService.querySortValue" interface="popover"
-          placeholder="Sort Prop" (ionChange)="setSort($event.target.value)">
+        <ion-select class="themed" [value]="searchService.sortValue" interface="popover" placeholder="Sort Prop"
+          (ionChange)="setSort($event.target.value)">
           <ion-select-option value="name">{{ 'Pages.SearchResults.Results.Sorter.SortedName' | translate
             }}</ion-select-option>
           <ion-select-option value="id">{{ 'Pages.SearchResults.Results.Sorter.SortedID' | translate
@@ -87,8 +86,8 @@
             }}</ion-select-option>
         </ion-select>
 
-        <ion-select class="themed" [(ngModel)]="searchService.querySortByValue" interface="popover"
-          placeholder="Sort Dir" (ionChange)="setDirection($event.target.value)">
+        <ion-select class="themed" [value]="searchService.sortDirValue" interface="popover" placeholder="Sort Dir"
+          (ionChange)="setDirection($event.target.value)">
           <ion-select-option value="asc">{{ 'Pages.SearchResults.Results.Sorter.Asc' | translate }}</ion-select-option>
           <ion-select-option value="desc">{{ 'Pages.SearchResults.Results.Sorter.Desc' | translate
             }}</ion-select-option>

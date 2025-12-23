@@ -1,15 +1,16 @@
-import { effect, inject, Injectable, signal, untracked } from '@angular/core';
+import { computed, effect, inject, Injectable, signal, untracked, type Signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { sortBy } from 'lodash';
+import { parseInt, sortBy } from 'lodash';
 import { LocalStorageService } from 'ngx-webstorage';
 import type { ICard } from '../../interfaces';
 import { queryToText } from '../../search/search';
 import { CardsService } from './cards.service';
 import { LocaleService } from './locale.service';
+import { toSignal } from '@angular/core/rxjs-interop';
 
 export type QueryDisplay = 'images' | 'text';
 export type QuerySort = keyof ICard;
-export type QuerySortBy = 'asc' | 'desc';
+export type QuerySortDir = 'asc' | 'desc';
 
 @Injectable({
   providedIn: 'root',
@@ -21,125 +22,114 @@ export class SearchService {
   private storageService = inject(LocalStorageService);
   private localeService = inject(LocaleService);
 
-  public visibleCards = signal<ICard[]>([]);
-  public queryDesc = signal<string>('');
-  public queryString = signal<string>('');
+  public visibleCards = computed(() => {
+    const page = this.pageValue();
 
-  public isSearching = signal<boolean>(false);
+    return this.queriedCards().slice(
+      page * this.cardsPerPage, (page + 1) * this.cardsPerPage
+    )
+  });
+  public queryDesc = computed(
+    () => queryToText(this.queryString(), this.queriedCards().length > 1)
+  )
+  public queryString = computed(
+    () => this.urlQueryParams().get("q") ?? ""
+  );
 
   public readonly cardsPerPage = 60;
-  public queriedCards: ICard[] = [];
+  public queriedCards: Signal<ICard[]> = computed(
+    () => {
+      const locale = this.localeService.currentLocale();
+      const cards = this.cardsService
+        .searchCards(this.queryString())
+        .filter(c => c.locale === locale);
 
-  public totalPages = signal<number>(0);
-  public pageValue = signal<number>(0);
+      const sortedCards = sortBy(cards, this.sortValue);
+      if (this.sortDirValue === "desc") {
+        sortedCards.reverse()
+      }
 
-  public displayCurrent = signal<number>(0);
-  public displayTotal = signal<number>(0);
-  public displayMaximum = signal<number>(0);
+      return sortedCards
+    }
+  )
 
-  private queryValue = '';
+  public totalPages = computed(() => {
+    const numCards = this.queriedCards().length;
+    return numCards === 0 ? 0 : Math.ceil(numCards / this.cardsPerPage) - 1
+  });
+  // public pageValue = signal<number>(0);
+  public pageValue = computed(
+    () => parseInt(this.urlQueryParams().get("p") ?? "0", 10)
+  );
 
-  public queryDisplayValue: QueryDisplay = 'images';
-  public querySortValue: QuerySort = 'name';
-  public querySortByValue: QuerySortBy = 'asc';
+  public displayCurrent = computed(
+    () => this.pageValue() * this.cardsPerPage + 1
+  );
+  public displayTotal = computed(
+    () => this.queriedCards().length
+  );
+  public displayMaximum = computed(
+    () => Math.min(this.displayTotal(), (this.pageValue() + 1) * this.cardsPerPage)
+  );
 
-  constructor() {
-    effect(() => {
-      this.localeService.currentLocale();
+  private urlQueryParams = toSignal(
+    this.route.queryParamMap,
+    { initialValue: this.route.snapshot.queryParamMap }
+  );
 
-      untracked(() => {
-        this.redoCurrentSearch();
-      });
-    });
-  }
+  public queryDisplayValue = computed(
+    () => this.urlQueryParams().get("d") as QueryDisplay | null
+  );
+  public querySortValue = computed(
+    () => this.urlQueryParams().get("s") as QuerySort | null
+  );
+  public querySortDirValue = computed(
+    () => this.urlQueryParams().get("b") as QuerySortDir | null
+  );
+
+  public get displayValue() { return this.queryDisplayValue() ?? 'images' }
+  public get sortValue() { return this.querySortValue() ?? 'name' }
+  public get sortDirValue() { return this.querySortDirValue() ?? 'asc' }
 
   search(query: string, changePage = true, setPage = -1) {
-    this.isSearching.set(true);
-
-    this.queryValue = query;
-    this.pageValue.set(0);
-    this.totalPages.set(0);
-    this.displayCurrent.set(0);
-    this.displayTotal.set(0);
-    this.displayMaximum.set(0);
-
-    this.queriedCards = this.cardsService
-      .searchCards(this.queryValue)
-      .filter((c) => c.locale === this.localeService.currentLocale());
-    this.doExtraSorting();
-
     if (changePage) {
       this.changePage(setPage >= 0 ? setPage : 0);
     }
 
-    this.queryString.set(this.queryValue);
-    this.storageService.store('search-query', this.queryValue);
-
-    this.queryDesc.set(
-      queryToText(this.queryValue, this.queriedCards.length > 1)
-    );
-
-    this.isSearching.set(false);
-  }
-
-  redoCurrentSearch() {
-    this.updateParams();
-    this.search(this.queryValue);
+    this.updateParams({ q: query })
   }
 
   changePage(newPage: number) {
-    this.pageValue.set(newPage);
-    this.totalPages.set(
-      Math.ceil(this.queriedCards.length / this.cardsPerPage) - 1
-    );
+    const totalPages = this.totalPages();
 
-    if (this.pageValue() > this.totalPages()) {
-      this.pageValue.set(this.totalPages());
-    }
-
-    if (this.pageValue() < 0) {
-      this.pageValue.set(0);
-    }
-
-    this.visibleCards.set(
-      this.queriedCards.slice(
-        this.pageValue() * this.cardsPerPage,
-        (this.pageValue() + 1) * this.cardsPerPage
-      )
-    );
-
-    this.displayCurrent.set(this.pageValue() * this.cardsPerPage + 1);
-    this.displayTotal.set(this.queriedCards.length);
-    this.displayMaximum.set(
-      Math.min(this.displayTotal(), (this.pageValue() + 1) * this.cardsPerPage)
-    );
-
-    this.updateParams();
+    const effectivePage = newPage < 0 ? 0 : totalPages < newPage ? totalPages : newPage;
+    this.updateParams({ p: effectivePage })
   }
 
-  private updateParams() {
+  updateDisplay(display: QueryDisplay) {
+    this.updateParams({ d: display })
+  }
+
+  updateSort(sort: QuerySort) {
+    this.updateParams({ s: sort })
+  }
+
+  updateSortDir(sortBy: QuerySortDir) {
+    this.updateParams({ b: sortBy })
+  }
+
+  private updateParams(params: {
+    q?: string,
+    d?: QueryDisplay,
+    s?: QuerySort,
+    b?: QuerySortDir,
+    p?: number
+  }) {
     this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: {
-        q: this.queryValue,
-        d: this.queryDisplayValue,
-        s: this.querySortValue,
-        b: this.querySortByValue,
-        p: this.pageValue(),
-      },
+      queryParams: params,
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
-  }
-
-  private doExtraSorting() {
-    this.queriedCards = sortBy(this.queriedCards, this.querySortValue);
-    if (this.querySortByValue === 'desc') {
-      this.queriedCards = this.queriedCards.reverse();
-    }
-  }
-
-  public resetCards() {
-    this.visibleCards.set([]);
   }
 }

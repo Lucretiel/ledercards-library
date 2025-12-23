@@ -1,4 +1,4 @@
-import { Component, inject, type OnInit } from '@angular/core';
+import { Component, computed, effect, inject, type OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 
 import { LocalStorageService } from 'ngx-webstorage';
@@ -7,7 +7,7 @@ import {
   SearchService,
   type QueryDisplay,
   type QuerySort,
-  type QuerySortBy,
+  type QuerySortDir,
 } from '../search.service';
 
 @Component({
@@ -20,53 +20,36 @@ export class SearchPage implements OnInit {
   private searchService = inject(SearchService);
   private storageService = inject(LocalStorageService);
 
-  public query = '';
+  public get query() { return this.searchService.queryString() }
 
   public page = 0;
 
   ngOnInit() {
-    this.searchService.isSearching.set(true);
-
-    this.route.queryParams.subscribe((params) => {
-      const newQuery = params['q'];
-      if (newQuery === this.query) return;
-
-      this.extractArgsFromQueryParamsAndSearch();
-    });
+    // Restore search settings when the search page loads, then ensure that
+    // any changes to search settings are stored
+    this.linkQuerySettingToStorage(s => s.queryDisplayValue(), "search-display", (s, display) => s.updateDisplay(display));
+    this.linkQuerySettingToStorage(s => s.querySortValue(), "search-sort", (s, sort) => s.updateSort(sort));
+    this.linkQuerySettingToStorage(s => s.querySortDirValue(), "search-direction", (s, dir) => s.updateSortDir(dir))
   }
 
-  ionViewDidEnter() {
-    this.extractArgsFromQueryParamsAndSearch();
-  }
+  // Do two things:
+  // - One-time preload the search setting from the cache
+  // - Set up an effect that propagates changes to the search setting TO the cache
+  private linkQuerySettingToStorage<T>(
+    queryValue: (service: SearchService) => (T | null),
+    key: string,
+    updater: (service: SearchService, value: T) => void,
+  ) {
+    if (queryValue(this.searchService) === null) {
+      const cached = this.storageService.retrieve(key) as T;
+      updater(this.searchService, cached)
+    }
 
-  private extractArgsFromQueryParamsAndSearch() {
-    this.route.queryParamMap.subscribe((paramMap) => {
-      this.query =
-        paramMap.get('q') ||
-        reformatQueryToJustHaveProduct(
-          this.storageService.retrieve('search-query')
-        ) ||
-        '';
-
-      this.searchService.queryDisplayValue =
-        (paramMap.get('d') as QueryDisplay) ||
-        this.storageService.retrieve('search-display') ||
-        'images';
-
-      this.searchService.querySortValue =
-        (paramMap.get('s') as QuerySort) ||
-        this.storageService.retrieve('search-sort') ||
-        'id';
-
-      this.searchService.querySortByValue =
-        (paramMap.get('b') as QuerySortBy) ||
-        this.storageService.retrieve('search-direction') ||
-        'asc';
-
-      const setPage = parseInt(paramMap.get('p') || '0', 10);
-      this.searchService.pageValue.set(setPage);
-
-      this.searchService.search(this.query, true, setPage);
-    });
+    // effect(() => {
+    //   const setting = queryValue(this.searchService);
+    //   if (setting !== null) {
+    //     this.storageService.store(key, setting);
+    //   }
+    // });
   }
 }

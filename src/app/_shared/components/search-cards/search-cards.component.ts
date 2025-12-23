@@ -3,7 +3,8 @@ import { Component, inject, output } from '@angular/core';
 
 import { ActivatedRoute } from '@angular/router';
 import { LocalStorageService } from 'ngx-webstorage';
-import { SearchService } from '../../../search.service';
+import { SearchService, type QueryDisplay, type QuerySort, type QuerySortDir } from '../../../search.service';
+import { CardsService } from 'src/app/cards.service';
 
 @Component({
   selector: 'app-search-cards',
@@ -13,12 +14,15 @@ import { SearchService } from '../../../search.service';
 export class SearchCardsComponent {
   public route = inject(ActivatedRoute);
   public searchService = inject(SearchService);
-  private storageService = inject(LocalStorageService);
+  public cardsService = inject(CardsService);
   public pageChanged = output<number>();
 
   public get queryString() {
+    this.searchService.queryString()
     return new URLSearchParams(window.location.search).get('q');
   }
+
+  public get loading() { return !this.cardsService.loaded }
 
   changePage(newPage: number) {
     this.searchService.changePage(newPage);
@@ -30,17 +34,14 @@ export class SearchCardsComponent {
   }
 
   public setDisplay(display: string): void {
-    this.storageService.store('search-display', display);
-    this.searchService.redoCurrentSearch();
+    this.searchService.updateDisplay(display as QueryDisplay)
   }
 
   public setSort(sort: string): void {
-    this.storageService.store('search-sort', sort);
-    this.searchService.redoCurrentSearch();
+    this.searchService.updateSort(sort as QuerySort)
   }
 
   public setDirection(dir: string): void {
-    this.storageService.store('search-direction', dir);
-    this.searchService.redoCurrentSearch();
+    this.searchService.updateSortDir(dir as QuerySortDir)
   }
 }
